@@ -106,6 +106,105 @@ const languageConfig = {
     }
 };
 
+async function syncInfrastructure(guild) {
+    console.log(`[Self-Healing] Iniciando varredura no servidor: ${guild.name}`);
+    const adminRoleId = process.env.ADMIN_ROLE_ID;
+
+    try {
+        // 1. Busca todos os canais, categorias e cargos atuais do servidor para a memória
+        const allChannels = await guild.channels.fetch();
+        const allRoles = await guild.roles.fetch();
+
+        // 2. SINCRONIZAÇÃO DO CORE (Welcome e Settings)
+        let welcomeChannel = allChannels.find(c => c.name === '🌻welcome🌻' && c.type === ChannelType.GuildText);
+        if (!welcomeChannel) {
+            console.log(`[Self-Healing] Canal Welcome ausente. Recriando...`);
+            welcomeChannel = await guild.channels.create({
+                name: '🌻welcome🌻', type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] }
+                ]
+            });
+            const welcomeMsg = await welcomeChannel.send("🌍 **Welcome to the Sunrise Multilingual Server!** 🌍\n\n" +
+            "To access the chats, react below with the flag of your native language:\n" +
+            "*(You can only access one language at a time!)*");
+            await Promise.all(['🇺🇸', '🇪🇸', '🇧🇷', '🇫🇷','🇯🇵','🇷🇺','🇨🇳','🇩🇪','🇰🇷'].map(emoji => welcomeMsg.react(emoji))); 
+        }
+        dbManager.saveEntity(guild.id, 'channel_welcome', welcomeChannel.id, 'core');
+
+        let settingsCategory = allChannels.find(c => c.name === '⚙️ qsmp settings' && c.type === ChannelType.GuildCategory);
+        if (!settingsCategory) {
+            console.log(`[Self-Healing] Categoria Settings ausente. Recriando...`);
+            settingsCategory = await guild.channels.create({
+                name: '⚙️ qsmp settings', type: ChannelType.GuildCategory,
+                permissionOverwrites: [
+                    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: adminRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels] }
+                ]
+            });
+        }
+        dbManager.saveEntity(guild.id, 'category_settings', settingsCategory.id, 'core');
+
+        let settingsChannel = allChannels.find(c => c.name === 'painel-de-controle' && c.parentId === settingsCategory.id);
+        if (!settingsChannel) {
+            settingsChannel = await guild.channels.create({ name: 'painel-de-controle', type: ChannelType.GuildText, parent: settingsCategory.id });
+            await settingsChannel.send("🛠️ **Painel de Controle Restabelecido.**");
+        }
+        dbManager.saveEntity(guild.id, 'channel_panel', settingsChannel.id, 'core');
+
+        // 3. SINCRONIZAÇÃO DAS SEÇÕES DE IDIOMAS (Via languageConfig)
+        for (const [emoji, langData] of Object.entries(languageConfig)) {
+            const langCode = langData.code;
+
+            // Busca Cargo
+            let role = allRoles.find(r => r.name === langData.roleName);
+            if (role) {
+                dbManager.saveEntity(guild.id, 'role', role.id, langCode);
+                
+                // Se o cargo existe, a categoria deveria existir. Vamos checar.
+                let category = allChannels.find(c => c.name === langData.categoryName && c.type === ChannelType.GuildCategory);
+                
+                if (!category) {
+                    console.log(`[Self-Healing] Categoria de ${langCode} sumiu! Recriando...`);
+                    category = await guild.channels.create({
+                        name: langData.categoryName, type: ChannelType.GuildCategory,
+                        permissionOverwrites: [
+                            { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+                            { id: role.id, allow: [PermissionFlagsBits.ViewChannel] }
+                        ]
+                    });
+                }
+                dbManager.saveEntity(guild.id, 'category', category.id, langCode);
+
+                // Varre os canais internos daquela categoria
+                for (const chData of langData.channels) {
+                    let channel = allChannels.find(c => c.name === chData.name && c.parentId === category.id);
+                    
+                    if (!channel) {
+                        console.log(`[Self-Healing] Canal ausente em ${langCode}: ${chData.name}. Recriando...`);
+                        
+                        const channelOptions = { name: chData.name, type: chData.type, parent: category.id };
+                        if (chData.readOnly) {
+                            channelOptions.permissionOverwrites = [
+                                { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+                                { id: role.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.CreatePublicThreads] }
+                            ];
+                        }
+                        channel = await guild.channels.create(channelOptions);
+                    }
+                    // Salva no banco (existindo previamente ou recém-criado)
+                    dbManager.saveEntity(guild.id, `channel_${chData.key}`, channel.id, langCode);
+                }
+            }
+        }
+        
+        console.log(`[Self-Healing] Sincronização concluída. Banco de dados reconstruído.`);
+    } catch (error) {
+        console.error(`[Erro Crítico] Falha na auto-cura:`, error);
+    }
+}
+
 // Função principal de inicialização da infraestrutura Base
 async function initializeCoreInfrastructure(guild) {
     // Se já criamos a base (welcome e settings) neste servidor, ignoramos.
@@ -191,9 +290,9 @@ async function initializeCoreInfrastructure(guild) {
 client.once('clientReady', async () => {
     console.log(`[Bot] Conectado como ${client.user.tag}`);
     
-    // Varre todos os servidores em que o bot está para garantir que têm a estrutura
     for (const guild of client.guilds.cache.values()) {
-        await initializeCoreInfrastructure(guild);
+        // Toda vez que o bot liga, ele faz o cross-check do Discord com o SQLite
+        await syncInfrastructure(guild);
     }
 });
 
