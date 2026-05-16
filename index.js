@@ -451,7 +451,7 @@ client.on('messageCreate', async (message) => {
                 
                 // Monta a Promise sem aguardar (sem o await ainda)
                 const requestPromise = axios.post(`${process.env.INTERNAL_API_URL}/translate`, {
-                    text: textToTranslate,
+                    text: textToBroadcast,
                     targetLanguages: langChunk
                 }, { 
                     headers: { 'Authorization': process.env.INTERNAL_API_SECRET } 
