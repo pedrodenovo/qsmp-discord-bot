@@ -120,7 +120,7 @@ async function initializeCoreInfrastructure(guild) {
     try {
         // 1. CRIANDO CANAL DE WELCOME
         const welcomeChannel = await guild.channels.create({
-            name: '🌻Welcome🌻',
+            name: '🌻welcome🌻',
             type: ChannelType.GuildText,
             permissionOverwrites: [
                 {
@@ -340,12 +340,37 @@ client.on('messageCreate', async (message) => {
             const targetLangs = newsChannels.map(n => n.lang_group);
 
             try {
-                const apiRes = await axios.post(`${process.env.INTERNAL_API_URL}/translate`, {
-                    text: textToBroadcast,
-                    targetLanguages: targetLangs
-                }, { headers: { 'Authorization': process.env.INTERNAL_API_SECRET } });
+            // ==========================================
+            // OTIMIZAÇÃO: CHUNKING E PROMISE.ALL
+            // ==========================================
+            const chunkSize = 2; // Quantidade de idiomas por requisição
+            const apiRequests = [];
 
-                const translations = apiRes.data.translations;
+            // Fatiando o array de idiomas em pedaços de 2
+            for (let i = 0; i < targetLangs.length; i += chunkSize) {
+                const langChunk = targetLangs.slice(i, i + chunkSize);
+                
+                // Monta a Promise sem aguardar (sem o await ainda)
+                const requestPromise = axios.post(`${process.env.INTERNAL_API_URL}/translate`, {
+                    text: textToTranslate,
+                    targetLanguages: langChunk
+                }, { 
+                    headers: { 'Authorization': process.env.INTERNAL_API_SECRET } 
+                });
+
+                apiRequests.push(requestPromise);
+            }
+
+            // Dispara todas as requisições ao mesmo tempo e espera a mais lenta terminar
+            const responses = await Promise.all(apiRequests);
+
+            // Funde todos os JSONs de retorno em um único objeto de traduções
+            let translations = {};
+            responses.forEach(res => {
+                if (res.data && res.data.translations) {
+                    translations = { ...translations, ...res.data.translations };
+                }
+            });
                 for (const target of newsChannels) {
                     const channel = await message.guild.channels.fetch(target.entity_id).catch(() => null);
                     if (channel && translations[target.lang_group]) {
@@ -384,6 +409,51 @@ client.on('messageCreate', async (message) => {
                     } catch (e) {}
                 }
                 dbManager.deleteGuildData(message.guild.id);
+            }, 5000);
+            return;
+        }
+
+        // COMANDO 5: !cleanlegacy (Apaga itens perdidos via Força Bruta)
+        if (command === 'cleanlegacy') {
+            await message.reply("🧹 **Limpador Legacy Ativado**\nBuscando e apagando canais/cargos residuais em 5 segundos...");
+            
+            // 1. Monta uma lista com TODOS os nomes que o bot costuma criar
+            const targetNames = new Set(['🌻welcome🌻', '⚙️ qsmp settings', 'painel-de-controle']);
+            
+            Object.values(languageConfig).forEach(lang => {
+                targetNames.add(lang.roleName);
+                targetNames.add(lang.categoryName);
+                lang.channels.forEach(ch => targetNames.add(ch.name));
+            });
+
+            setTimeout(async () => {
+                let deletedCount = 0;
+
+                // 2. Varre as Roles (Cargos)
+                for (const [id, role] of message.guild.roles.cache) {
+                    if (targetNames.has(role.name)) {
+                        try {
+                            await role.delete();
+                            deletedCount++;
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // Delay Rate Limit
+                        } catch (e) {}
+                    }
+                }
+
+                // 3. Varre os Channels e Categories
+                for (const [id, channel] of message.guild.channels.cache) {
+                    if (targetNames.has(channel.name)) {
+                        try {
+                            await channel.delete();
+                            deletedCount++;
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // Delay Rate Limit
+                        } catch (e) {}
+                    }
+                }
+
+                // Limpa o banco de dados também por precaução
+                dbManager.deleteGuildData(message.guild.id);
+                console.log(`[CleanLegacy] Finalizado. ${deletedCount} entidades residuais deletadas.`);
             }, 5000);
             return;
         }
