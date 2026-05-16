@@ -134,7 +134,7 @@ async function initializeCoreInfrastructure(guild) {
 
         // Envia a mensagem inicial
         const welcomeMsg = await welcomeChannel.send(
-            "🌍 **Welcome to the Multilingual Server!** 🌍\n\n" +
+            "🌍 **Welcome to the Sunrise Multilingual Server!** 🌍\n\n" +
             "To access the chats, react below with the flag of your native language:\n" +
             "*(You can only access one language at a time!)*"
         );
