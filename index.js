@@ -120,7 +120,7 @@ async function initializeCoreInfrastructure(guild) {
     try {
         // 1. CRIANDO CANAL DE WELCOME
         const welcomeChannel = await guild.channels.create({
-            name: '🌻welcome🌻',
+            name: '🌻Welcome🌻',
             type: ChannelType.GuildText,
             permissionOverwrites: [
                 {
@@ -134,13 +134,9 @@ async function initializeCoreInfrastructure(guild) {
 
         // Envia a mensagem inicial
         const welcomeMsg = await welcomeChannel.send(
-            "🌍 **Bem-vindo ao Servidor Multilíngue!** 🌍\n\n" +
-            "Para acessar os chats, reaja abaixo com a bandeira do seu idioma nativo:\n" +
-            "🇺🇸 English\n" +
-            "🇪🇸 Español\n" +
-            "🇧🇷 Português\n" +
-            "🇫🇷 Français\n\n" +
-            "*(Você só pode acessar um idioma por vez!)*"
+            "🌍 **Welcome to the Multilingual Server!** 🌍\n\n" +
+            "To access the chats, react below with the flag of your native language:\n" +
+            "*(You can only access one language at a time!)*"
         );
         // Adiciona reações base (você pode expandir depois)
         await welcomeMsg.react('🇺🇸');
