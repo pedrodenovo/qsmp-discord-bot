@@ -100,6 +100,16 @@ getTargetChannels: (guildId, entityType, sourceLang) => {
         stmt.run(threadId, syncId, langGroup);
     },
 
+    // Atualize essa função no database.js
+    saveEntity: (guildId, entityType, entityId, langGroup) => {
+        // Evita duplicidade no banco se a varredura rodar duas vezes
+        const stmtCheck = db.prepare('SELECT id FROM infrastructure WHERE entity_id = ?');
+        if (!stmtCheck.get(entityId)) {
+            const stmt = db.prepare('INSERT INTO infrastructure (guild_id, entity_type, entity_id, lang_group) VALUES (?, ?, ?, ?)');
+            stmt.run(guildId, entityType, entityId, langGroup);
+        }
+    }, 
+
     getThreadSync: (threadId) => {
         const stmt = db.prepare('SELECT sync_id, lang_group FROM thread_sync WHERE thread_id = ?');
         return stmt.get(threadId);
